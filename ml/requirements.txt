@@ -1,0 +1,12 @@
+tensorflow
+fastapi
+uvicorn
+python-multipart
+pillow
+numpy
+matplotlib
+opencv-python
+google-genai
+sqlalchemy
+python-dotenv
+pydantic

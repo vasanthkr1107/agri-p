@@ -1,0 +1,105 @@
+{
+  "description": "POST each object to http://localhost:8080/api/crops (Content-Type: application/json) to seed or extend crop catalog.",
+  "sampleCrops": [
+    {
+      "name": "Rice",
+      "suitableSoil": "Loamy, Clay",
+      "season": "Kharif",
+      "costPerAcre": 18500,
+      "expectedYield": 22,
+      "marketPrice": 2100,
+      "pesticides": "Neem-based spray every 10 days; monitor blast per local advisory.",
+      "durationDays": 120
+    },
+    {
+      "name": "Wheat",
+      "suitableSoil": "Loamy, Clay",
+      "season": "Rabi",
+      "costPerAcre": 14200,
+      "expectedYield": 18,
+      "marketPrice": 2250,
+      "pesticides": "Seed treatment; rust fungicide if needed.",
+      "durationDays": 110
+    },
+    {
+      "name": "Maize",
+      "suitableSoil": "Loamy, Sandy",
+      "season": "Kharif",
+      "costPerAcre": 16000,
+      "expectedYield": 28,
+      "marketPrice": 1650,
+      "pesticides": "Stem borer IPM; avoid peak pollinator spraying.",
+      "durationDays": 100
+    },
+    {
+      "name": "Cotton",
+      "suitableSoil": "Black, Clay",
+      "season": "Kharif",
+      "costPerAcre": 55000,
+      "expectedYield": 12,
+      "marketPrice": 6200,
+      "pesticides": "Bollworm rotation; follow label rates.",
+      "durationDays": 180
+    },
+    {
+      "name": "Sugarcane",
+      "suitableSoil": "Loamy, Clay",
+      "season": "Kharif",
+      "costPerAcre": 95000,
+      "expectedYield": 350,
+      "marketPrice": 320,
+      "pesticides": "Early shoot borer traps and approved insecticides.",
+      "durationDays": 365
+    },
+    {
+      "name": "Papaya",
+      "suitableSoil": "Loamy, Sandy",
+      "season": "Kharif",
+      "costPerAcre": 95000,
+      "expectedYield": 40,
+      "marketPrice": 4500,
+      "pesticides": "Neem oil rotations; monitor ringspot.",
+      "durationDays": 270
+    },
+    {
+      "name": "Watermelon",
+      "suitableSoil": "Sandy, Loamy",
+      "season": "Summer",
+      "costPerAcre": 78000,
+      "expectedYield": 180,
+      "marketPrice": 18,
+      "pesticides": "Mildew control; respect pre-harvest interval.",
+      "durationDays": 90
+    },
+    {
+      "name": "Chickpea",
+      "suitableSoil": "Loamy, Sandy",
+      "season": "Rabi",
+      "costPerAcre": 12500,
+      "expectedYield": 9,
+      "marketPrice": 5200,
+      "pesticides": "Pod borer IPM; botanicals where feasible.",
+      "durationDays": 130
+    }
+  ],
+  "suggestAiExample": {
+    "url": "POST http://localhost:8080/api/crops/suggest-ai",
+    "headers": { "Content-Type": "application/json" },
+    "body": {
+      "soilType": "Loamy",
+      "season": "Kharif",
+      "landArea": 2.5
+    },
+    "expectedResponseShape": {
+      "cropName": "Rice",
+      "totalCost": 46250.0,
+      "expectedProfit": 57550.0,
+      "pesticides": "Neem-based spray every 10–14 days; monitor blast and sheath blight per local advisory.",
+      "duration": 120,
+      "waterRequirements": "Loamy soil in Kharif (monsoon): holds moisture well. Rely on rainfall when adequate; supplement only if topsoil dries beyond ~10–12 cm between rains. Avoid over-irrigation—improve field drains to prevent waterlogging.",
+      "modelConfidence": 0.42,
+      "recommendationNote": null
+    },
+    "note": "Exact cropName and numbers depend on the ML model output and DB row. Start FastAPI (uvicorn) and MySQL before testing."
+  }
+}
