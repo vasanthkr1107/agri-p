@@ -7,6 +7,7 @@ Returns: predicted_crop, confidence, reason, estimated_cost, expected_profit
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -14,55 +15,24 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
+import google.generativeai as genai
+
+# Load env from the ml directory where GEMINI_API_KEY is stored
+env_path = Path(__file__).resolve().parent.parent / "ml" / ".env"
+load_dotenv(dotenv_path=env_path)
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
 
 MODEL_PATH = Path(__file__).resolve().parent / "crop_model.pkl"
 
 # Feature order must match training
 NUMERIC_FEATURES = ["N", "P", "K", "temperature", "humidity", "ph", "rainfall"]
 
-# Cost estimates per crop per acre (INR) — used when DB enrichment unavailable
-CROP_COST_MAP: dict[str, str] = {
-    "rice": "₹18,500 per acre", "maize": "₹16,000 per acre",
-    "chickpea": "₹12,500 per acre", "kidneybeans": "₹14,000 per acre",
-    "pigeonpeas": "₹13,500 per acre", "mothbeans": "₹11,000 per acre",
-    "mungbean": "₹12,000 per acre", "blackgram": "₹11,800 per acre",
-    "lentil": "₹13,000 per acre", "pomegranate": "₹1,20,000 per acre",
-    "banana": "₹95,000 per acre", "mango": "₹85,000 per acre",
-    "grapes": "₹1,80,000 per acre", "watermelon": "₹78,000 per acre",
-    "muskmelon": "₹72,000 per acre", "apple": "₹2,50,000 per acre",
-    "orange": "₹1,40,000 per acre", "papaya": "₹95,000 per acre",
-    "coconut": "₹45,000 per acre", "cotton": "₹55,000 per acre",
-    "jute": "₹42,000 per acre", "coffee": "₹1,80,000 per acre",
-    "wheat": "₹15,000 per acre", "sugarcane": "₹35,000 per acre",
-}
-
-# Profit label per crop
-CROP_PROFIT_MAP: dict[str, str] = {
-    "rice": "Medium", "maize": "Medium", "wheat": "Medium",
-    "chickpea": "Medium", "lentil": "Medium", "blackgram": "Medium",
-    "mungbean": "Medium", "mothbeans": "Low", "pigeonpeas": "Medium",
-    "kidneybeans": "Medium", "jute": "Low", "cotton": "High",
-    "sugarcane": "High", "pomegranate": "High", "banana": "High",
-    "mango": "High", "grapes": "High", "apple": "High",
-    "orange": "High", "papaya": "Medium", "coconut": "High",
-    "coffee": "High", "watermelon": "Medium", "muskmelon": "Medium",
-}
-
-# Reason templates keyed by dominant feature
-REASON_TEMPLATES = [
-    # (feature_index, threshold, comparator, reason_snippet)
-    (2, 120, ">", "high potassium levels boost root development"),
-    (0, 80, ">", "nitrogen-rich soil promotes lush vegetative growth"),
-    (1, 80, ">", "high phosphorus supports strong flowering and fruiting"),
-    (4, 80, ">", "high humidity suits moisture-loving crops"),
-    (4, 30, "<", "low humidity matches drought-tolerant crop requirements"),
-    (5, 200, ">", "abundant rainfall provides natural irrigation"),
-    (5, 50, "<", "low rainfall aligns with water-efficient crop needs"),
-    (3, 30, ">", "warm temperature accelerates crop maturation"),
-    (3, 15, "<", "cool temperatures favour this cold-season crop"),
-    (6, 6.5, ">", "slightly alkaline pH suits this crop's nutrient uptake"),
-    (6, 6.0, "<", "mildly acidic soil pH is optimal for this crop"),
-]
+# Cost and profit maps have been removed in favour of dynamic generation via Gemini AI.
 
 
 _bundle = None
@@ -115,28 +85,49 @@ def _encode_budget(budget: str, budget_enc) -> int:
         return 1
 
 
-def _build_reason(crop: str, features: list[float], soil_type: str, budget: str) -> str:
-    """Generate a human-readable explanation based on dominant features."""
-    reasons = []
-    # N, P, K, temperature, humidity, ph, rainfall
-    for feat_idx, threshold, comparator, snippet in REASON_TEMPLATES:
-        val = features[feat_idx]
-        if comparator == ">" and val > threshold:
-            reasons.append(snippet)
-        elif comparator == "<" and val < threshold:
-            reasons.append(snippet)
-        if len(reasons) >= 2:
-            break
+def generate_ai_recommendation(crop: str, features: list[float], soil_type: str, budget: str) -> dict[str, str]:
+    if not GEMINI_API_KEY:
+        return {
+            "reason": f"AI key missing. ML predicts {crop} is suitable for these conditions.",
+            "estimated_cost": "Contact local agri office",
+            "expected_profit": "Medium"
+        }
+    
+    n, p, k, temp, hum, ph, rain = features
+    prompt = f"""
+The machine learning model has predicted '{crop}' as the best crop for the following conditions:
+- Nitrogen: {n} kg/ha
+- Phosphorus: {p} kg/ha
+- Potassium: {k} kg/ha
+- Temperature: {temp}°C
+- Humidity: {hum}%
+- Rainfall: {rain} mm
+- pH: {ph}
+- Soil Type: {soil_type}
+- Budget Level: {budget}
 
-    crop_title = crop.strip().capitalize()
-    soil_note = f"{soil_type} soil" if soil_type else "the given soil"
-    reason_parts = ", ".join(reasons) if reasons else "the provided soil and climate conditions"
-    return (
-        f"{crop_title} is recommended because {reason_parts} "
-        f"make {soil_note} ideal for its cultivation. "
-        f"A {budget.lower() if budget else 'medium'} budget allocation "
-        f"is appropriate for this crop."
-    )
+Provide a short, clear reason (about 2-3 sentences) why this crop is highly suitable for these specific agronomic and soil conditions.
+Also provide a realistic estimated cost of cultivation per acre in India (in INR, e.g. "₹25,000 per acre") and expected profit level ("Low", "Medium", or "High").
+
+Return the response strictly as a JSON object with the following keys: "reason", "estimated_cost", "expected_profit". Do not include Markdown formatting like ```json.
+"""
+    try:
+        model = genai.GenerativeModel("gemini-flash-latest")
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+        return json.loads(text.strip())
+    except Exception as e:
+        import logging
+        logging.getLogger("crop_api").error(f"Gemini error: {e}")
+        return {
+            "reason": f"{crop.capitalize()} is recommended based on the provided soil and climate conditions.",
+            "estimated_cost": "Estimate unavailable",
+            "expected_profit": "Medium"
+        }
 
 
 def predict_crop_from_dict(payload: dict[str, Any]) -> dict[str, Any]:
@@ -177,9 +168,12 @@ def predict_crop_from_dict(payload: dict[str, Any]) -> dict[str, Any]:
     confidence = float(round(float(proba[idx]), 4))
 
     crop_key = raw_label.strip().lower()
-    estimated_cost = CROP_COST_MAP.get(crop_key, "Contact local agri office for estimate")
-    expected_profit = CROP_PROFIT_MAP.get(crop_key, "Medium")
-    reason = _build_reason(raw_label, features, soil_type, budget)
+    
+    # Generate dynamic AI recommendation
+    ai_response = generate_ai_recommendation(raw_label, features, soil_type, budget)
+    estimated_cost = ai_response.get("estimated_cost", "Estimate unavailable")
+    expected_profit = ai_response.get("expected_profit", "Medium")
+    reason = ai_response.get("reason", "No reason provided")
 
     # Format crop name nicely
     predicted_crop = raw_label.strip()
